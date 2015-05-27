@@ -3,12 +3,12 @@ package com.netural.remoteappcontrol;
 import com.netural.remoteappcontrol.library.RemoteAppControl;
 
 import android.os.Bundle;
-import android.support.v7.app.ActionBarActivity;
+import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
 
 
-public class MainActivity extends ActionBarActivity {
+public class MainActivity extends AppCompatActivity implements RemoteAppControl.CloseAppListener {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -20,7 +20,9 @@ public class MainActivity extends ActionBarActivity {
     protected void onResume() {
         super.onResume();
 
-        new RemoteAppControl(this, "http://netural.com/test")
+        new RemoteAppControl(this, BuildConfig.VERSION_CODE,
+                "https://raw.githubusercontent.com/Netural/RemoteAppControl/develop/text.json",
+                this)
                 .withStyle(R.style.Theme_AppCompat_Dialog_Alert).check();
     }
 
@@ -44,5 +46,10 @@ public class MainActivity extends ActionBarActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onCloseApp() {
+        finish();
     }
 }

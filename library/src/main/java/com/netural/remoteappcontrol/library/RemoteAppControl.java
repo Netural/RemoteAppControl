@@ -1,23 +1,50 @@
 package com.netural.remoteappcontrol.library;
 
+import com.netural.remoteappcontrol.library.model.Platform;
+import com.netural.remoteappcontrol.library.model.RemoteVersion;
+import com.netural.remoteappcontrol.library.model.VersionDialogLanguage;
+import com.netural.remoteappcontrol.library.network.NetworkUtils;
+
+import org.json.JSONException;
+
 import android.app.Activity;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.support.v7.app.AlertDialog;
+import android.util.Log;
+
+import java.io.IOException;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * Created by stephan.schober on 26.05.15.
  */
 public class RemoteAppControl {
 
-    private String remoteUrl;
-    private Activity hostActivity;
-    private int style;
+    public static final String PREFS_NAME = "remote_app_control_prefs";
+    private static final String TAG = RemoteAppControl.class.getSimpleName();
+    private static final String PREF_LAST_CHANGE = "pref_last_change";
+    private static final String PREF_LAST_JSON = "pref_last_json";
 
-    public RemoteAppControl(Activity activity, String url) {
-        this.hostActivity = activity;
+    private String remoteUrl;
+    private Context ctx;
+    private SharedPreferences sharedPreferences;
+    private int currentVersionCode;
+    private int style = R.style.Theme_AppCompat_Dialog_Alert;
+    private CloseAppListener listener;
+
+    public RemoteAppControl(Activity activity, int currentVersionCode, String url,
+                            CloseAppListener listener) {
+        this.ctx = activity;
+        this.currentVersionCode = currentVersionCode;
+        this.sharedPreferences = ctx.getSharedPreferences(PREFS_NAME, 0);
         this.remoteUrl = url;
+        this.listener = listener;
     }
 
     public RemoteAppControl withStyle(int style) {
@@ -26,20 +53,19 @@ public class RemoteAppControl {
     }
 
     public void check() {
-        showDialog("test", "pls update now!",
-                "https://play.google.com/store/apps/details?id=com.whatsapp", false);
+        new RemoteVersionCheckAsyncTask().execute();
     }
 
     private void showDialog(String title, String message, final String updateUrl,
                             boolean dismissable) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(hostActivity,
+        AlertDialog.Builder builder = new AlertDialog.Builder(ctx,
                 style);
         builder.setTitle(title);
         builder.setMessage(message);
         builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                hostActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri
+                ctx.startActivity(new Intent(Intent.ACTION_VIEW, Uri
                         .parse(updateUrl)));
             }
         });
@@ -51,10 +77,101 @@ public class RemoteAppControl {
                     new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
-                            hostActivity.finish();
+                            dialog.dismiss();
+                            if (listener != null) {
+                                listener.onCloseApp();
+                            }
+                            ctx = null;
                         }
                     });
         }
         builder.show();
+    }
+
+    public interface CloseAppListener {
+
+        void onCloseApp();
+    }
+
+    public class RemoteVersionCheckAsyncTask extends AsyncTask<Void, Integer, RemoteVersion> {
+
+        @Override
+        protected RemoteVersion doInBackground(Void... params) {
+
+            long lastServerChange = 0;
+            try {
+                long starttime = System.currentTimeMillis();
+                Date lastUpDate = new Date();
+                lastServerChange = NetworkUtils.checkLastUpdate(remoteUrl);
+                lastUpDate.setTime(lastServerChange);
+                Log.i(TAG, "checked last change for " + remoteUrl + ": " + lastUpDate.toString()
+                        + " in " + (System.currentTimeMillis() - starttime) + " ms");
+            } catch (IOException e) {
+                Log.w(TAG, "could not check last change date", e);
+                return null;
+            }
+
+            long lastChange = sharedPreferences.getLong(PREF_LAST_CHANGE, 0);
+
+            String json = null;
+            if (lastServerChange <= lastChange) {
+                Log.i(TAG, "trying to read remote version from shared preferences");
+                json = sharedPreferences.getString(PREF_LAST_JSON, null);
+            } else {
+                try {
+                    long starttime = System.currentTimeMillis();
+                    json = NetworkUtils.fetchUrl(remoteUrl);
+
+                    Log.i(TAG, "fetched and parsed version info in " + (System.currentTimeMillis()
+                            - starttime) + " ms");
+                } catch (IOException e) {
+                    Log.w(TAG, "could not fetch remote version", e);
+                    return null;
+                }
+
+                sharedPreferences.edit().putLong(PREF_LAST_CHANGE, lastServerChange).commit();
+                sharedPreferences.edit().putString(PREF_LAST_JSON, json).commit();
+            }
+
+            if (json == null) {
+                return null;
+            }
+
+            RemoteVersion remoteVersion = null;
+            try {
+                remoteVersion = RemoteVersion.from(json);
+            } catch (JSONException e) {
+                Log.w(TAG, "could not parse remote version", e);
+                return null;
+            }
+
+            return remoteVersion;
+        }
+
+        @Override
+        protected void onPostExecute(RemoteVersion remoteVersion) {
+            if (remoteVersion == null) {
+                return;
+            }
+
+            Platform androidPlatform = remoteVersion.getAndroidPlatform();
+            VersionDialogLanguage versionDialogLanguage = null;
+
+            if (androidPlatform.getLanguages().containsKey(Locale.getDefault().getLanguage())) {
+                versionDialogLanguage = androidPlatform.getLanguages()
+                                                       .get(Locale.getDefault().getLanguage());
+            } else if (androidPlatform.getLanguages().containsKey(Locale.US.getLanguage())) {
+                versionDialogLanguage = androidPlatform.getLanguages()
+                                                       .get(Locale.US.getLanguage());
+            }
+
+            boolean showUpdate = currentVersionCode < androidPlatform.getCurrentVersionCode();
+            boolean forceUpdate = currentVersionCode < androidPlatform.getMinVersionCode();
+
+            if (versionDialogLanguage != null && showUpdate) {
+                showDialog(versionDialogLanguage.getTitle(), versionDialogLanguage.getMessage(),
+                        versionDialogLanguage.getUrl(), !forceUpdate);
+            }
+        }
     }
 }

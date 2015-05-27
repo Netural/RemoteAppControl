@@ -1,0 +1,30 @@
+{
+  "android": {
+    "minVersion": "1.0.0",
+    "minVersionCode": 10,
+    "currentVersion": "1.2.0",
+    "currentVersionCode": 12,
+    "languages": [
+      {
+        "language": "en",
+        "title": "warning",
+        "message": "please update your app!",
+        "url": "https://play.google.com/store/apps/details?id=com.whatsapp"
+      }
+      ]
+  },
+  "iOS": {
+    "minVersion": "1.0.0",
+    "minVersionCode": 10,
+    "currentVersion": "1.2.0",
+    "currentVersionCode": 12,
+    "languages": [
+      {
+        "language": "en",
+        "title": "warning",
+        "message": "please update your app!",
+        "url": "https://itunes.apple.com/at/app/whatsapp-messenger/id31063399"
+      }
+      ]
+  }
+}
