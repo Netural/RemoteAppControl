@@ -26,7 +26,8 @@ import java.util.Locale;
  */
 public class RemoteAppControl {
 
-    public static final String PREFS_NAME = "remote_app_control_prefs";
+    // the name of the shared preferences, can be accessed to be stored with BackupHelper
+    public static final String REMOTEAPPCONTROL_PREFS_NAME = "remote_app_control_prefs";
     private static final String TAG = RemoteAppControl.class.getSimpleName();
     private static final String PREF_LAST_CHANGE = "pref_last_change";
     private static final String PREF_LAST_JSON = "pref_last_json";
@@ -35,27 +36,52 @@ public class RemoteAppControl {
     private Context ctx;
     private SharedPreferences sharedPreferences;
     private int currentVersionCode;
+
+    // the default style of the dialog
     private int style = R.style.Theme_AppCompat_Dialog_Alert;
     private CloseAppListener listener;
 
+    /**
+     * Initialize RemoteAppControl with these params
+     *
+     * @param activity           the activity where the dialog should be shown
+     * @param currentVersionCode the current version code of your app, received with
+     *                           BuildConfig.VERSION_CODE
+     * @param url                the url where the json file is stored
+     * @param listener           a callback listner for closing the app
+     */
     public RemoteAppControl(Activity activity, int currentVersionCode, String url,
                             CloseAppListener listener) {
         this.ctx = activity;
         this.currentVersionCode = currentVersionCode;
-        this.sharedPreferences = ctx.getSharedPreferences(PREFS_NAME, 0);
+        this.sharedPreferences = ctx.getSharedPreferences(REMOTEAPPCONTROL_PREFS_NAME, 0);
         this.remoteUrl = url;
         this.listener = listener;
     }
 
+    /**
+     * Set your own style for the dialog, for more info see AppCompat AlertDialog
+     */
     public RemoteAppControl withStyle(int style) {
         this.style = style;
         return this;
     }
 
+    /**
+     * Launch the remote version check
+     */
     public void check() {
         new RemoteVersionCheckAsyncTask().execute();
     }
 
+    /**
+     * Show the update dialog in the declared activity
+     *
+     * @param title       dialog title
+     * @param message     dialog message
+     * @param updateUrl   the url the user is redirected to
+     * @param dismissable can the user cancel the dialog
+     */
     private void showDialog(String title, String message, final String updateUrl,
                             boolean dismissable) {
         AlertDialog.Builder builder = new AlertDialog.Builder(ctx,
@@ -88,6 +114,9 @@ public class RemoteAppControl {
         builder.show();
     }
 
+    /**
+     * Listener which has to be implemented to close the app if update is forced
+     */
     public interface CloseAppListener {
 
         void onCloseApp();
@@ -98,6 +127,7 @@ public class RemoteAppControl {
         @Override
         protected RemoteVersion doInBackground(Void... params) {
 
+            // check when the remote json file has been updated
             long lastServerChange = 0;
             try {
                 long starttime = System.currentTimeMillis();
@@ -114,10 +144,13 @@ public class RemoteAppControl {
             long lastChange = sharedPreferences.getLong(PREF_LAST_CHANGE, 0);
 
             String json = null;
+            // is the remote version newer?
             if (lastServerChange <= lastChange) {
                 Log.i(TAG, "trying to read remote version from shared preferences");
+                // read json from shared preferences
                 json = sharedPreferences.getString(PREF_LAST_JSON, null);
             } else {
+                // load json from url
                 try {
                     long starttime = System.currentTimeMillis();
                     json = NetworkUtils.fetchUrl(remoteUrl);
@@ -129,6 +162,7 @@ public class RemoteAppControl {
                     return null;
                 }
 
+                // update shared preferences
                 sharedPreferences.edit().putLong(PREF_LAST_CHANGE, lastServerChange).commit();
                 sharedPreferences.edit().putString(PREF_LAST_JSON, json).commit();
             }
@@ -139,6 +173,7 @@ public class RemoteAppControl {
 
             RemoteVersion remoteVersion = null;
             try {
+                // parse json file
                 remoteVersion = RemoteVersion.from(json);
             } catch (JSONException e) {
                 Log.w(TAG, "could not parse remote version", e);
@@ -157,6 +192,7 @@ public class RemoteAppControl {
             Platform androidPlatform = remoteVersion.getAndroidPlatform();
             VersionDialogLanguage versionDialogLanguage = null;
 
+            // check if current user language is available, otherwise use "en"
             if (androidPlatform.getLanguages().containsKey(Locale.getDefault().getLanguage())) {
                 versionDialogLanguage = androidPlatform.getLanguages()
                                                        .get(Locale.getDefault().getLanguage());
